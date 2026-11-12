@@ -3,7 +3,7 @@ import { Check, Pause, Play, RotateCcw, Square, Volume2, X } from "lucide-react"
 import type { EngineHandle } from "../hooks/useEngine";
 import { RepCounter, type Exercise } from "../rehab/exercises";
 import type { RehabLog } from "../rehab/log";
-import { speak, speechSupported } from "../lib/speech";
+import { speak, speechSupported, stopSpeaking, unlockSpeech } from "../lib/speech";
 
 const REST_SEC = 15;
 const CALIBRATE_MS = 1200;
@@ -152,7 +152,12 @@ export function ExerciseCard(props: { h: EngineHandle; exercise: Exercise; log: 
           {speechSupported && (
             <button
               className={`btn ghost icon ${voice ? "active" : ""}`}
-              onClick={() => setVoice(!voice)}
+              onClick={() => {
+                // speak from the tap itself so iOS allows the later rep counts
+                if (!voice) unlockSpeech("Voice counting on");
+                else stopSpeaking();
+                setVoice(!voice);
+              }}
               aria-pressed={voice}
               aria-label="Voice counting"
               title="Count reps out loud"

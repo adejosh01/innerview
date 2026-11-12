@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { ArrowUp, Lock, PlugZap, Sparkles, Volume2, VolumeX, X } from "lucide-react";
 import type { TutorStatus } from "../hooks/useTutorStatus";
-import { speak, speechSupported, stopSpeaking } from "../lib/speech";
+import { speak, speechSupported, stopSpeaking, unlockSpeech } from "../lib/speech";
 import type { Structure } from "../core/anatomy";
 
 type Msg = { role: "q" | "a" | "err"; text: string };
@@ -75,6 +75,7 @@ export function TutorPanel(props: {
               className={`btn ghost icon ${readAloud ? "active" : ""}`}
               onClick={() => {
                 if (readAloud) stopSpeaking();
+                else unlockSpeech("Reading answers aloud"); // arms iOS for speech after the answer arrives
                 setReadAloud(!readAloud);
               }}
               aria-pressed={readAloud}

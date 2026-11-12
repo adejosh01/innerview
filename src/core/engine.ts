@@ -377,9 +377,12 @@ export class XrayEngine {
     const vh = this.video.videoHeight || 720;
     const cw = this.container.clientWidth;
     const ch = this.container.clientHeight;
-    // Landscape space: show the whole frame. Portrait space (phones): fill it and
-    // crop the sides, otherwise a 16:9 camera image becomes a thin strip.
-    const scale = ch > cw ? Math.max(cw / vw, ch / vh) : Math.min(cw / vw, ch / vh);
+    // Desktop (landscape space): show the whole frame. Phones / narrow screens, or any
+    // portrait space: fill it edge to edge and crop the overflow. Phone cameras often
+    // deliver portrait video, which would otherwise sit in a narrow column.
+    const narrow = typeof window !== "undefined" && window.matchMedia("(max-width: 900px)").matches;
+    const fill = narrow || ch > cw;
+    const scale = fill ? Math.max(cw / vw, ch / vh) : Math.min(cw / vw, ch / vh);
     this.cssW = Math.round(vw * scale);
     this.cssH = Math.round(vh * scale);
     Object.assign(this.stage.style, { width: `${this.cssW}px`, height: `${this.cssH}px` });
