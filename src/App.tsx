@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type MouseEvent, type PointerEvent } from "react";
-import { Activity, Camera, Circle, Compass, GraduationCap, Hand, Home, Info, Lock, Minimize2, MonitorPlay, ScanFace, Sparkles, Square, Stethoscope, Target } from "lucide-react";
+import { Activity, Camera, Circle, Compass, Expand, GraduationCap, Hand, Home, Info, Lock, Minimize2, MonitorPlay, ScanFace, Shrink, Sparkles, Square, Stethoscope, Target } from "lucide-react";
 import { useEngine } from "./hooks/useEngine";
 import { useTutorStatus } from "./hooks/useTutorStatus";
 import type { Structure } from "./core/anatomy";
@@ -50,6 +50,42 @@ export default function App() {
   const [recording, setRecording] = useState(false);
   const [mode, setMode] = useState<Mode>("explore");
   const [patientView, setPatientView] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+
+  // Full screen: CSS takes the video edge to edge everywhere; where the browser
+  // allows it (Android, desktop) we also enter real fullscreen to hide the browser UI.
+  function setFullscreen(on: boolean) {
+    setExpanded(on);
+    const doc = document as Document & { webkitExitFullscreen?: () => void; webkitFullscreenElement?: Element };
+    const el = document.documentElement as HTMLElement & { webkitRequestFullscreen?: () => void };
+    try {
+      if (on && !document.fullscreenElement) {
+        if (el.requestFullscreen) el.requestFullscreen({ navigationUI: "hide" }).catch(() => {});
+        else el.webkitRequestFullscreen?.();
+      } else if (!on && (document.fullscreenElement || doc.webkitFullscreenElement)) {
+        if (document.exitFullscreen) document.exitFullscreen().catch(() => {});
+        else doc.webkitExitFullscreen?.();
+      }
+    } catch {
+      /* fullscreen not allowed here (e.g. iPhone Safari): CSS expansion still applies */
+    }
+  }
+
+  // leaving browser fullscreen (Esc, back gesture) also collapses the view
+  useEffect(() => {
+    const onChange = () => {
+      if (!document.fullscreenElement) setExpanded(false);
+    };
+    document.addEventListener("fullscreenchange", onChange);
+    return () => document.removeEventListener("fullscreenchange", onChange);
+  }, []);
+
+  useEffect(() => {
+    if (!expanded) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setFullscreen(false);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [expanded]);
   const [clinic, setClinic] = useState<ClinicState>({ topic: null, step: 0, tool: "point", color: PEN_COLORS[0] });
   const drawing = useRef(false);
   const learn = useLearnProgress();
@@ -109,6 +145,7 @@ export default function App() {
   /** Home: stop the camera and go back to the start screen. */
   function goHome() {
     if (recording) return; // don't silently drop a recording
+    setFullscreen(false);
     h.stop();
     enterMode("explore");
     setTutorOpen(false);
@@ -280,7 +317,7 @@ export default function App() {
   const stop = (e: MouseEvent) => e.stopPropagation();
 
   return (
-    <div className={`app ${patientView ? "patient-view" : ""} ${mode === "clinic" ? "clinic" : ""} ${running ? "" : "idle"}`}>
+    <div className={`app ${patientView ? "patient-view" : ""} ${mode === "clinic" ? "clinic" : ""} ${running ? "" : "idle"} ${expanded && running ? "expanded" : ""}`}>
       <header className="header">
         <button className="logo-btn" onClick={goHome} title={running ? "Home: stop the camera and go back to the start screen" : "Home"} aria-label="Home">
           <Logo />
@@ -418,7 +455,22 @@ export default function App() {
               <span className="label">AI tutor</span>
               {tutorStatus === "not-connected" && <span className="badge">Off</span>}
             </button>
+            <span className="sep" />
+            <button
+              className={`btn ${expanded ? "active" : ""}`}
+              onClick={() => setFullscreen(!expanded)}
+              title={expanded ? "Exit full screen" : "Full screen"}
+              aria-label={expanded ? "Exit full screen" : "Full screen"}
+            >
+              {expanded ? <Shrink aria-hidden /> : <Expand aria-hidden />}
+              <span className="label">{expanded ? "Exit" : "Full screen"}</span>
+            </button>
           </nav>
+        )}
+        {expanded && (
+          <button className="btn expand-exit" onClick={(e) => { e.stopPropagation(); setFullscreen(false); }} aria-label="Exit full screen">
+            <Shrink aria-hidden />
+          </button>
         )}
         </div>
 
@@ -489,6 +541,16 @@ export default function App() {
         </div>
 
 
+        {tutorOpen && (
+          <div
+            className="sheet-scrim"
+            aria-hidden
+            onClick={(e) => {
+              e.stopPropagation();
+              setTutorOpen(false);
+            }}
+          />
+        )}
         {tutorOpen && (
           <div onClick={stop}>
             <TutorPanel

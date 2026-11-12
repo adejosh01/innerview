@@ -466,3 +466,40 @@ select {
 @media (max-width: 380px) {
   .logo .word { display: none; }
 }
+
+/* ═══════════════ full screen ═══════════════ */
+.app.expanded .stage-wrap {
+  position: fixed; inset: 0; z-index: 60; height: auto; top: 0;
+  background: #000;
+}
+.app.expanded .header, .app.expanded .panel, .app.expanded .mode-tabs, .app.expanded .dock { display: none; }
+.app.expanded .hint { top: calc(12px + env(safe-area-inset-top)); right: 64px; }
+.app.expanded .toolbar { bottom: calc(14px + env(safe-area-inset-bottom)); }
+.expand-exit {
+  position: fixed; z-index: 70;
+  top: calc(10px + env(safe-area-inset-top)); right: calc(10px + env(safe-area-inset-right));
+  width: 42px; height: 42px; padding: 0; border-radius: 50%;
+  background: var(--glass); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+}
+.app.expanded .tutor { z-index: 75; }
+
+/* ═══════════════ solid surfaces for cards & sheets ═══════════════
+   Glass is only for small chrome floating over the video (toolbar, hints).
+   Cards, sheets and dialogs get an opaque surface so nothing shows through. */
+.card { background: var(--surface); }
+.info-card, .quiz-card, .caption-card { background: rgba(12, 18, 27, 0.94); }
+.tutor { background: var(--surface); box-shadow: 0 16px 50px rgba(0, 0, 0, .7); }
+.sheet-scrim { display: none; }
+.credits::backdrop { background: rgba(2, 5, 9, .82); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); }
+@media (max-width: 900px) {
+  .dock .card { background: var(--surface); box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; }
+  .sheet-scrim { display: block; position: fixed; inset: 0; z-index: 29; background: rgba(2, 5, 9, .72); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); }
+  .tutor { border-color: var(--border-strong); }
+}
+
+/* notch / status-bar safe areas (viewport-fit=cover, home-screen app) */
+@media (max-width: 900px) {
+  .header { height: calc(var(--header-h) + env(safe-area-inset-top)); padding-top: env(safe-area-inset-top); }
+  .stage-wrap { top: calc(var(--header-h) + env(safe-area-inset-top)); }
+  .app.idle .stage-wrap { height: calc(100dvh - var(--header-h) - env(safe-area-inset-top)); }
+}
