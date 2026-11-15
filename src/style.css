@@ -564,3 +564,7 @@ textarea.field { width: 100%; resize: vertical; min-height: 96px; padding: 10px 
 }
 .panel .row { flex-wrap: wrap; }
 .panel .row .btn { min-width: 0; }
+
+/* start screen: controls do nothing until the camera/demo runs, so hide the panel */
+.app.idle { grid-template-columns: minmax(0, 1fr); grid-template-areas: "header" "view"; }
+.app.idle .panel { display: none; }
