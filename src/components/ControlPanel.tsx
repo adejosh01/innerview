@@ -69,6 +69,20 @@ export function ControlPanel({ h }: { h: EngineHandle }) {
         </div>
       </Section>
 
+      <Section title="Anatomy">
+        <Segmented
+          label="Anatomy variant"
+          value={s.anatomySex}
+          options={[
+            { value: "neutral", label: "Neutral" },
+            { value: "female", label: "Female" },
+            { value: "male", label: "Male" },
+          ]}
+          onChange={(anatomySex) => patch({ anatomySex })}
+        />
+        <p className="note">Adjusts sex-specific shapes (pelvis, jaw). You choose it; it's never guessed from your face.</p>
+      </Section>
+
       <Section title="Look">
         <Segmented
           label="Render style"

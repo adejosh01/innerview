@@ -2,6 +2,7 @@ import * as THREE from "three";
 import type { NormalizedLandmark } from "@mediapipe/tasks-vision";
 import { createAnatomyMaterial, createSharedUniforms, type AnatomyMaterial, type SharedUniforms } from "./materials";
 import { createOccluderMaterial, FanPolygon, placeCapsule, unitCapsule } from "./occluder";
+import type { Structure } from "./anatomy";
 
 /** Finger segments used for the occlusion silhouette (fatter than bones). */
 const FINGER_SEGS: [number, number][] = [
@@ -51,6 +52,10 @@ export class HandBones {
   private up = new THREE.Vector3(0, 1, 0);
   visible = true;
 
+  /** Labelled structure for the hands (anchor = palm of the first tracked hand). */
+  readonly structures: Structure[] = [];
+  private palm: { x: number; y: number } | null = null;
+
   /** Depth-only silhouettes of the real hands, drawn before the head anatomy. */
   readonly occluderScene = new THREE.Scene();
   occlusion = true;
@@ -60,6 +65,16 @@ export class HandBones {
 
   constructor() {
     this.material = createAnatomyMaterial(this.uniforms, "#bfe6ff", "#e9e1cf");
+    this.structures.push({
+      id: "hands",
+      name: "Hand & wrist bones",
+      layer: "hands",
+      anchor: new THREE.Vector3(),
+      info: "Each hand has 27 bones: 8 small carpals in the wrist, 5 metacarpals across the palm and 14 phalanges in the fingers and thumb. That many joints is what makes fine movements like writing possible.",
+      materials: [this.material],
+      object: this.scene,
+      screen: () => (this.visible ? this.palm : null),
+    });
     for (let h = 0; h < 2; h++) {
       const g = new THREE.Group();
       BONES.forEach(() => g.add(new THREE.Mesh(this.geo, this.material)));
@@ -90,6 +105,8 @@ export class HandBones {
   /** Poses the bone meshes from MediaPipe hand landmarks (stage CSS px space). */
   update(hands: { landmarks: NormalizedLandmark[] }[], w: number, h: number): void {
     const toPx = (lm: NormalizedLandmark, out: THREE.Vector3) => out.set(lm.x * w, -lm.y * h, -lm.z * w);
+    const first = hands[0]?.landmarks;
+    this.palm = first ? { x: ((first[0].x + first[5].x + first[17].x) / 3) * w, y: ((first[0].y + first[5].y + first[17].y) / 3) * h } : null;
     this.hands.forEach((g, hi) => {
       const hand = hands[hi];
       const occ = this.occluders[hi];

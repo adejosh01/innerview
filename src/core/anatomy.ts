@@ -13,12 +13,20 @@ import { createAnatomyMaterial, type AnatomyMaterial, type SharedUniforms } from
 
 export type LayerId = "skull" | "brain" | "muscles" | "eyes" | "spine";
 
+/** Layers a structure can belong to: head layers plus the screen-space body and hand overlays. */
+export type StructureLayer = LayerId | "body" | "hands";
+
 export interface Structure {
   id: string;
   name: string;
-  layer: LayerId;
-  /** Label / pick anchor in head space. */
+  layer: StructureLayer;
+  /** Label / pick anchor in head space (unused when `screen` is set). */
   anchor: THREE.Vector3;
+  /**
+   * For screen-space overlays (body, hands): current anchor in stage CSS px,
+   * un-mirrored image orientation (x right, y down), or null when not tracked.
+   */
+  screen?: () => { x: number; y: number } | null;
   info: string;
   materials: AnatomyMaterial[];
   object: THREE.Object3D;

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type MouseEvent, type PointerEvent } from "react";
-import { Activity, Camera, Circle, Compass, Expand, GraduationCap, Hand, Home, Info, Lock, Minimize2, MonitorPlay, ScanFace, Shrink, Sparkles, Square, Stethoscope, Target } from "lucide-react";
+import { Activity, Camera, Circle, Compass, Expand, GraduationCap, HeartPulse, Hand, Home, Info, Lock, Minimize2, MonitorPlay, ScanFace, Shrink, Sparkles, Square, Stethoscope, Target } from "lucide-react";
 import { useEngine } from "./hooks/useEngine";
 import { useTutorStatus } from "./hooks/useTutorStatus";
 import type { Structure } from "./core/anatomy";
@@ -22,7 +22,12 @@ import { ExerciseCard } from "./components/ExerciseCard";
 import type { Exercise } from "./rehab/exercises";
 import { useRehabLog } from "./rehab/log";
 
-type Mode = "explore" | "learn" | "rehab" | "clinic";
+import { SymptomPanel } from "./components/SymptomPanel";
+import { SymptomResultCard } from "./components/SymptomResultCard";
+import { useSymptomCheck } from "./symptoms/useSymptomCheck";
+import { AREAS, areaForStructure } from "./symptoms/data";
+
+type Mode = "explore" | "learn" | "rehab" | "symptoms" | "clinic";
 
 function download(blob: Blob, name: string) {
   const url = URL.createObjectURL(blob);
@@ -92,6 +97,28 @@ export default function App() {
   const [lesson, setLesson] = useState<{ l: Lesson; step: number } | null>(null);
   const [lessonClick, setLessonClick] = useState<Structure | null>(null);
   const rehabLog = useRehabLog();
+  const symptoms = useSymptomCheck();
+
+  /** Pick a symptom area: show and highlight the related anatomy. */
+  function chooseArea(areaId: string) {
+    symptoms.patch({ area: areaId });
+    const area = AREAS.find((a) => a.id === areaId);
+    if (!area) return;
+    h.patch({ layers: { ...h.settings.layers, ...area.layers }, reveal: "whole" });
+    h.engine.current?.setHighlights(area.structures);
+  }
+
+  // when results arrive, show the related anatomy (switching on any layer it lives in)
+  useEffect(() => {
+    if (symptoms.state.status !== "result") return;
+    const ids = symptoms.state.result.related_structures;
+    const engine = h.engine.current;
+    if (!engine) return;
+    const layers = new Set(engine.allStructures().filter((st) => ids.includes(st.id)).map((st) => st.layer));
+    if (layers.size) h.patch({ layers: { ...h.settings.layers, ...Object.fromEntries([...layers].map((l) => [l, true])) } });
+    engine.setHighlights(ids);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [symptoms.state]);
   const [exercise, setExercise] = useState<Exercise | null>(null);
   const [exerciseRun, setExerciseRun] = useState(0); // remount key so restarting is clean
 
@@ -135,6 +162,7 @@ export default function App() {
     setSelected(null);
     if (m !== "learn") goLesson(null);
     if (m !== "rehab") setExercise(null);
+    if (m === "symptoms" && symptoms.intake.area) chooseArea(symptoms.intake.area);
     if (m !== "clinic") {
       setPatientView(false);
       setClinic((c) => ({ ...c, topic: null, tool: "point" }));
@@ -153,7 +181,7 @@ export default function App() {
 
   // step highlights win in clinic mode; otherwise the tapped structure
   useEffect(() => {
-    if (quiz || (mode === "learn" && lesson) || (mode === "rehab" && exercise)) return; // these manage their own highlights
+    if (quiz || (mode === "learn" && lesson) || (mode === "rehab" && exercise) || mode === "symptoms") return; // these manage their own highlights
     const stepIds = mode === "clinic" && clinic.topic ? clinic.topic.steps[clinic.step].highlight : [];
     h.engine.current?.setHighlights([...stepIds, ...(selected ? [selected.id] : [])]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -230,6 +258,7 @@ export default function App() {
       if (q.has("all")) h.patch({ layers: { ...h.settings.layers, skull: true, brain: true, muscles: true } });
       if (q.has("labels")) h.patch({ labels: true });
       if (q.has("body")) h.setLayer("body", true);
+      if (q.has("symptoms")) setMode("symptoms");
       const rx = q.get("rehab");
       if (rx !== null) {
         setMode("rehab");
@@ -273,6 +302,12 @@ export default function App() {
     }
     if (mode === "learn" && lesson) {
       if (st) setLessonClick({ ...st });
+      return;
+    }
+    if (mode === "symptoms") {
+      // tapping the reflection picks the body area for the symptom check
+      const area = st && areaForStructure(st.id);
+      if (area) chooseArea(area.id);
       return;
     }
     setSelected(st);
@@ -336,6 +371,7 @@ export default function App() {
               { value: "explore", label: "Explore" },
               { value: "learn", label: "Learn" },
               { value: "rehab", label: "Rehab" },
+              { value: "symptoms", label: "Symptoms" },
               { value: "clinic", label: "Clinic" },
             ]}
             onChange={enterMode}
@@ -489,6 +525,17 @@ export default function App() {
             />
           </div>
         )}
+        {mode === "symptoms" && running && (
+          <div onClick={stop}>
+            <SymptomResultCard
+              state={symptoms.state}
+              intake={symptoms.intake}
+              structures={h.engine.current?.allStructures() ?? []}
+              onHighlight={(ids) => h.engine.current?.setHighlights(ids)}
+              onClose={() => symptoms.setState({ status: "idle" })}
+            />
+          </div>
+        )}
         {mode === "rehab" && running && exercise && (
           <div onClick={stop}>
             <ExerciseCard key={exerciseRun} h={h} exercise={exercise} log={rehabLog} onClose={() => startExercise(null)} />
@@ -568,7 +615,9 @@ export default function App() {
       </main>
 
       <aside className="panel" aria-label="Controls">
-        {mode === "rehab" && running ? (
+        {mode === "symptoms" && running ? (
+          <SymptomPanel check={symptoms} aiStatus={tutorStatus} onArea={chooseArea} onBack={() => enterMode("explore")} />
+        ) : mode === "rehab" && running ? (
           <RehabPanel log={rehabLog} active={exercise} onStart={startExercise} onBack={() => enterMode("explore")} />
         ) : mode === "learn" && running ? (
           <LearnPanel
@@ -604,6 +653,7 @@ export default function App() {
               ["explore", "Explore", Compass],
               ["learn", "Learn", GraduationCap],
               ["rehab", "Rehab", Activity],
+              ["symptoms", "Symptoms", HeartPulse],
               ["clinic", "Clinic", Stethoscope],
             ] as const
           ).map(([m, label, Icon]) => (

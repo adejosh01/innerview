@@ -2,6 +2,7 @@
 // Run: put ANTHROPIC_API_KEY in .env, then `npm run tutor` (Vite proxies /api → this server).
 import http from "node:http";
 import { askTutor, hasKey, MAX_BODY, tutorStatus } from "./tutorCore.mjs";
+import { checkSymptoms } from "./symptomsCore.mjs";
 
 const PORT = Number(process.env.TUTOR_PORT ?? 8787);
 
@@ -12,7 +13,8 @@ function send(res, { status, json }) {
 
 const server = http.createServer(async (req, res) => {
   if (req.method === "GET" && req.url === "/api/tutor/status") return send(res, tutorStatus());
-  if (req.method !== "POST" || req.url !== "/api/tutor") return send(res, { status: 404, json: { error: "not found" } });
+  const route = req.url === "/api/tutor" ? askTutor : req.url === "/api/symptoms" ? checkSymptoms : null;
+  if (req.method !== "POST" || !route) return send(res, { status: 404, json: { error: "not found" } });
   let raw = "";
   for await (const chunk of req) {
     raw += chunk;
@@ -24,7 +26,7 @@ const server = http.createServer(async (req, res) => {
   } catch {
     return send(res, { status: 400, json: { error: "invalid JSON" } });
   }
-  send(res, await askTutor(body));
+  send(res, await route(body));
 });
 
 server.listen(PORT, "127.0.0.1", () => {

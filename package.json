@@ -11,7 +11,8 @@
     "setup:mediapipe": "node scripts/setup-mediapipe.mjs",
     "postinstall": "node scripts/setup-mediapipe.mjs",
     "tutor": "node --env-file-if-exists=.env server/tutor.mjs",
-    "build:anatomy": "node scripts/build-anatomy.mjs"
+    "build:anatomy": "node scripts/build-anatomy.mjs",
+    "build:body": "node scripts/build-body.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.8.0",

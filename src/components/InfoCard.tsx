@@ -9,6 +9,8 @@ const LAYER_NAMES: Record<Structure["layer"], string> = {
   brain: "Nervous system",
   muscles: "Muscle",
   eyes: "Sense organ",
+  body: "Bone · skeleton",
+  hands: "Bone · hand",
 };
 
 export function InfoCard(props: {

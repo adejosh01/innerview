@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { FaceLandmarker, type NormalizedLandmark } from "@mediapipe/tasks-vision";
 import { buildAnatomy, muscleActivations, type Anatomy, type LayerId, type Structure } from "./anatomy";
 import { HandBones } from "./hands";
-import { BodySkeleton } from "./body";
+import { BodySkeleton, type AnatomySex } from "./body";
 import { loadRealAnatomy } from "./realAnatomy";
 import { applyLook, createSharedUniforms, RevealKind, type LookMode } from "./materials";
 import { OneEuroFilter, VectorFilter } from "./filter";
@@ -40,6 +40,8 @@ export interface EngineSettings {
   smoothing: number; // 0..1 (higher = steadier, more lag)
   mirror: boolean;
   handOcclusion: boolean;
+  /** Sex-specific anatomy variant (pelvis shape, jaw proportions). Chosen by the user, never inferred. */
+  anatomySex: AnatomySex;
 }
 
 export const DEFAULT_FIT: FitSettings = { scale: 1, width: 1, height: 1, depth: 1, x: 0, y: 0, z: 0, jawWidth: 1, jawLength: 1 };
@@ -61,6 +63,7 @@ export const DEFAULT_SETTINGS: EngineSettings = {
   smoothing: 0.5,
   mirror: true,
   handOcclusion: true,
+  anatomySex: "neutral",
 };
 
 export interface FrameInfo {
@@ -95,10 +98,11 @@ function demoEuler(t: number): THREE.Euler {
 }
 
 /** Synthetic tracking frame for demo mode. */
-function demoFrame(now: number): TrackingFrame {
+function demoFrame(now: number, fullBody = false): TrackingFrame {
   const t = now / 1000;
+  // Full-body demo: step the virtual person back ~2 m so head-to-ankles fits the frame.
   const m = new THREE.Matrix4().compose(
-    new THREE.Vector3(0, -1, -42),
+    fullBody ? new THREE.Vector3(0, 66, -200) : new THREE.Vector3(0, -1, -42),
     new THREE.Quaternion().setFromEuler(demoEuler(t)),
     new THREE.Vector3(1, 1, 1),
   );
@@ -116,8 +120,33 @@ function demoFrame(now: number): TrackingFrame {
       eyeLookInRight: wave(0.6) * 0.6,
     },
     hands: [],
-    pose: demoPose(t),
+    pose: fullBody ? demoFullBody(t) : demoPose(t),
   };
+}
+
+/**
+ * Standing figure ~2 m from the camera (matches the head placed by demoFrame):
+ * at 63° vertical FOV the frame is ~246 cm tall and ~437 cm wide.
+ */
+function demoFullBody(t: number): NormalizedLandmark[] {
+  const pts: NormalizedLandmark[] = Array.from({ length: 33 }, () => ({ x: 0.5, y: 0.5, z: 0, visibility: 0 }));
+  const set = (i: number, x: number, y: number) => (pts[i] = { x, y, z: 0, visibility: 1 });
+  const sway = Math.sin(t * 0.7) * 0.004;
+  const lift = (Math.sin(t * 1.1) + 1) / 2; // 0..1 arm raise
+  const W = 437, H = 246; // cm across / down the frame
+  const at = (xcm: number, ycm: number): [number, number] => [0.5 + xcm / W + sway, 0.5 - ycm / H];
+  // subject's LEFT = +x in the raw (un-mirrored) image
+  set(11, ...at(18, 43)); set(12, ...at(-18, 43)); // shoulders
+  const elbowOut = 8 + lift * 20, elbowUp = 43 - 29 + lift * 22;
+  set(13, ...at(18 + elbowOut, elbowUp)); set(14, ...at(-18 - elbowOut, elbowUp));
+  set(15, ...at(20 + elbowOut * 1.7, elbowUp - 26 + lift * 34)); set(16, ...at(-20 - elbowOut * 1.7, elbowUp - 26 + lift * 34));
+  set(23, ...at(9, -9)); set(24, ...at(-9, -9)); // hips
+  set(25, ...at(10, -53)); set(26, ...at(-10, -53)); // knees
+  set(27, ...at(10, -94)); set(28, ...at(-10, -94)); // ankles
+  set(31, ...at(12, -100)); set(32, ...at(-12, -100)); // toes
+  set(7, ...at(7, 62)); set(8, ...at(-7, 62)); // ears (for shrug calibration)
+  set(0, ...at(0, 64)); // nose
+  return pts;
 }
 
 /** A gently swaying standing figure for demo mode (normalised image coords). */
@@ -231,6 +260,11 @@ export class XrayEngine {
     this.resizeObs.observe(container);
     this.applySettings();
 
+    this.body
+      .loadReal()
+      .then(() => this.applySettings())
+      .catch((err) => console.warn("Real body skeleton failed to load; using simplified bones", err));
+
     loadRealAnatomy(this.anatomy, this.shared)
       .then((r) => {
         this.realModels = !!r;
@@ -327,13 +361,14 @@ export class XrayEngine {
     (Object.keys(a.layers) as LayerId[]).forEach((id) => (a.layers[id].visible = s.layers[id]));
     this.handBones.visible = s.layers.hands;
     this.body.visible = s.layers.body;
+    this.body.setSex(s.anatomySex);
     this.tracker?.setPoseEnabled(s.layers.body);
     // the fingertip lens sits on the hand, so hand occlusion would cut a hole in it
     this.handBones.occlusion = s.handOcclusion && s.reveal !== "lens";
 
     a.allMaterials.forEach((m) => applyLook(m, s.look));
     applyLook(this.handBones.material, s.look);
-    applyLook(this.body.material, s.look);
+    this.body.materials.forEach((m) => applyLook(m, s.look));
     this.shared.uSolid.value = s.look === "solid" ? 1 : 0;
     this.shared.uBrightness.value = s.brightness;
     // Solid: real face fades the model; X-ray: real face brightens the video.
@@ -346,7 +381,9 @@ export class XrayEngine {
     const f = s.fit;
     a.fit.scale.set(f.scale * f.width, f.scale * f.height, f.scale * f.depth);
     a.fit.position.set(f.x, f.y, f.z);
-    a.jaw.scale.set(f.jawWidth, f.jawLength, 1 + (f.jawLength - 1) * 0.5);
+    // typical average differences: slightly broader, longer mandible in male anatomy
+    const sexJaw = s.anatomySex === "male" ? { w: 1.04, l: 1.03 } : s.anatomySex === "female" ? { w: 0.97, l: 0.98 } : { w: 1, l: 1 };
+    a.jaw.scale.set(f.jawWidth * sexJaw.w, f.jawLength * sexJaw.l, 1 + (f.jawLength * sexJaw.l - 1) * 0.5);
 
     const flip = s.mirror ? "scaleX(-1)" : "none";
     this.video.style.transform = flip;
@@ -405,7 +442,7 @@ export class XrayEngine {
     const now = performance.now();
 
     if (this.demo) {
-      this.frame = demoFrame(now);
+      this.frame = demoFrame(now, this.settings.layers.body);
       this.fpsN++;
     } else if (this.video.readyState >= 2 && this.video.currentTime !== this.lastVideoTime) {
       this.lastVideoTime = this.video.currentTime;
@@ -526,6 +563,11 @@ export class XrayEngine {
         m.uniforms.uLayerAlpha.value = this.faceAlpha;
       }
     }
+    // body & hand overlays are tracked separately, so they don't fade with the face
+    for (const st of [...this.body.structures, ...this.handBones.structures]) {
+      const hi = this.highlights.has(st.id) ? 1 : 0;
+      for (const m of st.materials) m.uniforms.uHighlight.value = hi;
+    }
   }
 
   private updateReveal(tip: NormalizedLandmark | null): void {
@@ -581,8 +623,28 @@ export class XrayEngine {
     return this.normToStage({ x: (v.x + 1) / 2, y: (1 - v.y) / 2 });
   }
 
+  /** Every labelled structure: head anatomy plus body and hand overlays. */
+  allStructures(): Structure[] {
+    return [...this.anatomy.structures, ...this.body.structures, ...this.handBones.structures];
+  }
+
+  /** Structures whose layer is switched on and that are currently on screen. */
   visibleStructures(): Structure[] {
-    return this.anatomy.structures.filter((s) => this.settings.layers[s.layer]);
+    return this.allStructures().filter((st) => {
+      if (!this.settings.layers[st.layer]) return false;
+      if (st.screen) return st.screen() !== null;
+      return this.anatomy.root.visible;
+    });
+  }
+
+  /** Where a structure is on screen, in stage CSS px (mirrored for display). */
+  structureScreenPos(st: Structure): { x: number; y: number } | null {
+    if (st.screen) {
+      const p = st.screen();
+      if (!p) return null;
+      return { x: this.settings.mirror ? this.cssW - p.x : p.x, y: p.y };
+    }
+    return this.projectHeadPoint(st.anchor);
   }
 
   private drawOverlay(fr: TrackingFrame | null, tip: NormalizedLandmark | null): void {
@@ -639,7 +701,7 @@ export class XrayEngine {
       ctx.restore();
     }
 
-    if (s.labels && this.anatomy.root.visible) this.drawLabels();
+    if (s.labels) this.drawLabels();
     if (this.anatomy.root.visible) this.drawStrokes();
 
     if (s.reveal === "lens" && tip) {
@@ -656,24 +718,49 @@ export class XrayEngine {
   }
 
   /**
-   * Labels are laid out in two columns beside the head (left / right of the
-   * projected centre), stacked to avoid overlap, with leader lines to anchors.
+   * Labels are laid out in two columns beside their group (head, or body and
+   * hands), stacked to avoid overlap, with leader lines to anchors.
    */
   private drawLabels(): void {
-    const ctx = this.octx;
-    const centre = this.projectHeadPoint(new THREE.Vector3(0, 1, -2));
-    const edge = this.projectHeadPoint(new THREE.Vector3(9.5, 1, -2));
-    if (!centre || !edge) return;
-    const radius = Math.max(60, Math.abs(edge.x - centre.x));
-    const ROW = 19;
-
     type Item = { st: Structure; p: { x: number; y: number }; y: number };
-    const sides: Record<"l" | "r", Item[]> = { l: [], r: [] };
-    for (const st of this.visibleStructures()) {
-      const p = this.projectHeadPoint(st.anchor);
-      if (!p) continue;
-      sides[p.x < centre.x ? "l" : "r"].push({ st, p, y: p.y });
+    const visible = this.visibleStructures();
+
+    // head group: columns beside the projected head
+    const centre = this.anatomy.root.visible ? this.projectHeadPoint(new THREE.Vector3(0, 1, -2)) : null;
+    const edge = this.anatomy.root.visible ? this.projectHeadPoint(new THREE.Vector3(9.5, 1, -2)) : null;
+    const headItems: Item[] = [];
+    if (centre && edge) {
+      for (const st of visible.filter((x) => !x.screen)) {
+        const p = this.structureScreenPos(st);
+        if (p) headItems.push({ st, p, y: p.y });
+      }
     }
+
+    // body + hands group: columns beside the torso
+    const bodyItems: Item[] = [];
+    for (const st of visible.filter((x) => !!x.screen)) {
+      const p = this.structureScreenPos(st);
+      if (p) bodyItems.push({ st, p, y: p.y });
+    }
+
+    const headRadius = centre && edge ? Math.max(60, Math.abs(edge.x - centre.x)) : 0;
+    if (bodyItems.length) {
+      // one shared layout so head and body labels stack together instead of colliding
+      const f = this.body.frame();
+      const cx = f ? (this.settings.mirror ? this.cssW - f.cx : f.cx) : centre?.x ?? this.cssW / 2;
+      this.drawLabelColumns([...headItems, ...bodyItems], cx, Math.max(f?.radius ?? 120, headRadius));
+    } else if (centre && headItems.length) {
+      this.drawLabelColumns(headItems, centre.x, headRadius);
+    }
+  }
+
+  private drawLabelColumns(all: { st: Structure; p: { x: number; y: number }; y: number }[], centreX: number, radius: number): void {
+    const ctx = this.octx;
+    const ROW = 19;
+    type Item = (typeof all)[number];
+    const sides: Record<"l" | "r", Item[]> = { l: [], r: [] };
+    for (const it of all) sides[it.p.x < centreX ? "l" : "r"].push(it);
+    const centre = { x: centreX };
 
     ctx.save();
     ctx.font = "600 12px \"Inter Variable\", system-ui, sans-serif";
@@ -794,11 +881,10 @@ export class XrayEngine {
 
   /** Nearest visible structure to a stage CSS-px point (e.g. a click or fingertip). */
   pick(x: number, y: number, maxDist = 70): Structure | null {
-    if (!this.anatomy.root.visible) return null;
     let best: Structure | null = null;
     let bestD = maxDist;
     for (const st of this.visibleStructures()) {
-      const p = this.projectHeadPoint(st.anchor);
+      const p = this.structureScreenPos(st);
       if (!p) continue;
       const d = Math.hypot(p.x - x, p.y - y);
       if (d < bestD) {

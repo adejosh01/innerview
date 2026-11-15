@@ -19,7 +19,7 @@ export function Credits({ open, onClose }: { open: boolean; onClose: () => void 
 
       <h4 className="eyebrow">Anatomy models</h4>
       <p>
-        Skull, brain, eyes, eye muscles, neck spine and sternocleidomastoid are based on <strong>BodyParts3D</strong>, © The
+        Skull, brain, eyes, eye muscles, neck and body skeleton (ribs, spine, pelvis, shoulder and limb bones) and sternocleidomastoid are based on <strong>BodyParts3D</strong>, © The
         Database Center for Life Science, licensed under{" "}
         <a href="https://creativecommons.org/licenses/by-sa/2.1/jp/deed.en" target="_blank" rel="noreferrer">
           CC BY-SA 2.1 Japan
@@ -32,8 +32,7 @@ export function Credits({ open, onClose }: { open: boolean; onClose: () => void 
         models are available under the same licence.
       </p>
       <p>
-        The facial expression and chewing muscles, hand bones and full-body skeleton are simplified illustrative shapes made
-        for this app.
+        The facial expression and chewing muscles and the hand bones are simplified illustrative shapes made for this app.
       </p>
 
       <h4 className="eyebrow">Software</h4>
